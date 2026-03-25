@@ -40,3 +40,7 @@ CHUNK_SIZE      = 1000
 CHUNK_OVERLAP   = 100
 
 LLM_MODEL = "claude-sonnet-4-20250514"
+
+# language settings
+PRIMARY_LANGUAGES   = ["en", "bn"]
+WHISPER_LANGUAGE    = "bn"  # for Bangla audio transcription
