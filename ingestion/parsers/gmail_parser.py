@@ -1,46 +1,13 @@
 import mailbox
 import os
 import io
+import sys
 from datetime import datetime
 
-try:
-    import fitz
-    PDF_SUPPORT = True
-except ImportError:
-    PDF_SUPPORT = False
+sys.path.append(os.path.expanduser("~/personal-kb"))
+from config.settings import ACCOUNT_PATHS, IMAGE_EXTENSIONS, ZIP_EXTENSIONS
 
-try:
-    from docx import Document
-    DOCX_SUPPORT = True
-except ImportError:
-    DOCX_SUPPORT = False
-
-try:
-    import openpyxl
-    XLSX_SUPPORT = True
-except ImportError:
-    XLSX_SUPPORT = False
-
-# ── CONFIGURATION ──────────────────────────────────────────
-
-ACCOUNTS = {
-    "purno230":       "~/personal-kb/data/purno230",
-    "ciai":           "~/personal-kb/data/ciai",
-    "alisyed_office": "~/personal-kb/data/alisyed_office",
-    "purnoli230":     "~/personal-kb/data/purnoli230",
-    "purno240":       "~/personal-kb/data/purno240",
-    "uni_aiub":       "~/personal-kb/data/uni_aiub",
-}
-
-SKIP_EXTENSIONS = [
-    ".mp4", ".mkv", ".avi", ".mov",
-    ".mp3", ".wav", ".flac",
-    ".exe", ".dmg", ".iso", ".torrent"
-]
-
-IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic"]
-ZIP_EXTENSIONS   = [".zip", ".rar", ".tar", ".gz"]
-
+ACCOUNTS = ACCOUNT_PATHS
 MAX_EMAILS_PER_ACCOUNT = None
 
 

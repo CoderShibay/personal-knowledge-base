@@ -1,15 +1,12 @@
 import json
 import os
+import sys
 from datetime import datetime
 
-CHATGPT_DATA_PATH = os.path.expanduser("~/personal-kb/data/chatgpt/conversations.json")
+sys.path.append(os.path.expanduser("~/personal-kb"))
+from config.settings import OTHER_PATHS, PRIORITY_PROJECTS
 
-PRIORITY_PROJECTS = ["Side Projects and Life"]
-
-SKIP_EXTENSIONS = [
-    ".mkv", ".mp4", ".avi", ".mov", ".torrent",
-    ".iso", ".zip", ".rar", ".exe", ".dmg"
-]
+CHATGPT_DATA_PATH = os.path.join(OTHER_PATHS["chatgpt"], "conversations.json")
 
 def parse_chatgpt_export(filepath=CHATGPT_DATA_PATH):
     with open(filepath, "r", encoding="utf-8") as f:
