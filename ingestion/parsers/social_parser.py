@@ -15,11 +15,28 @@ INSTAGRAM_PATH = OTHER_PATHS["instagram"]
 FACEBOOK_PATH  = OTHER_PATHS["facebook"]
 LINKEDIN_PATH  = OTHER_PATHS["linkedin"]
 
-# Attachment-only message patterns — no text value, skip them
-_ATTACHMENT_RE = re.compile(
-    r"^.+? sent (an attachment|a photo|a video|a reel|a voice message|a link|a sticker)\.$",
-    re.IGNORECASE,
-)
+# Map content patterns to short descriptive tags
+# Used when a message has no text but represents a real event
+_MEDIA_TAG_PATTERNS = [
+    (re.compile(r"sent a? ?photo",          re.I), "[photo]"),
+    (re.compile(r"sent a? ?video",          re.I), "[video]"),
+    (re.compile(r"sent a? ?voice message",  re.I), "[voice note]"),
+    (re.compile(r"sent a? ?reel",           re.I), "[reel]"),
+    (re.compile(r"sent a? ?link",           re.I), "[link]"),
+    (re.compile(r"sent a? ?sticker",        re.I), "[sticker]"),
+    (re.compile(r"sent a? ?gif",            re.I), "[gif]"),
+    (re.compile(r"sent an? attachment",     re.I), "[attachment]"),
+    (re.compile(r"^liked a message$",       re.I), "[liked a message]"),
+    (re.compile(r"^missed voice call$",     re.I), "[missed voice call]"),
+    (re.compile(r"sent a disappearing",     re.I), "[disappearing message]"),
+]
+
+
+def _media_tag(content):
+    for pattern, tag in _MEDIA_TAG_PATTERNS:
+        if pattern.search(content):
+            return tag
+    return None
 
 
 # ── ENCODING FIX ───────────────────────────────────────────
@@ -100,33 +117,59 @@ def _find_message_dirs(base_path):
     return found
 
 
+def _format_share(share):
+    """Format a share object into a readable string with full caption."""
+    owner      = _fix(share.get("original_content_owner") or "")
+    username   = _fix(share.get("profile_share_username")  or "")
+    name       = _fix(share.get("profile_share_name")      or "")
+    link       = share.get("link") or ""
+    share_text = _fix(share.get("share_text") or "").strip()
+
+    if username:
+        # Profile share — someone shared an account
+        label = f"[shared profile: @{username}" + (f" ({name})" if name else "") + "]"
+        return label + (f" {link}" if link else "")
+
+    parts = []
+    if owner:
+        parts.append(f"@{owner}")
+    if link:
+        parts.append(link)
+    header = "[shared: " + " | ".join(parts) + "]" if parts else "[shared]"
+
+    if share_text:
+        return header + "\n    " + share_text  # full caption, no truncation
+
+    return header
+
+
 def _parse_message(msg):
     """
-    Returns a formatted line for one message, or None if it should be skipped.
-    Applies encoding fix, filters pure attachment notifications,
-    and handles shared content.
+    Returns (formatted_line, date) for one message.
+    Nothing is dropped — every event is represented.
+    Attachment notifications → short tags ([photo], [video], etc.)
+    Shared posts → full creator + link + complete caption.
     """
     raw_content = (msg.get("content") or "").strip()
     content     = _fix(raw_content)
     sender      = _fix(msg.get("sender_name") or "Unknown")
     date        = _ts_ms(msg.get("timestamp_ms", 0))
+    share       = msg.get("share")
 
-    # Pure attachment notification with no share data — skip
-    if _ATTACHMENT_RE.match(content) or not content:
-        share = msg.get("share")
-        if not share:
-            return None, None
-        # Has share data — use it instead of the attachment placeholder
-        owner      = _fix(share.get("original_content_owner") or "")
-        share_text = _fix(share.get("share_text") or "").replace("\n", " ").strip()
-        link       = share.get("link") or ""
-        if owner:
-            content = f"[shared from @{owner}]" + (f" — {share_text[:120]}" if share_text else "")
-        elif link:
-            content = f"[shared: {link}]"
-        else:
-            return None, None
+    # Share takes priority — always use it when present
+    if share:
+        content = _format_share(share)
+        return f"[{date}] {sender}: {content}", date
 
+    # No share — check if it is an attachment/event notification
+    if not content:
+        return f"[{date}] {sender}: [media]", date
+
+    tag = _media_tag(content)
+    if tag:
+        return f"[{date}] {sender}: {tag}", date
+
+    # Regular text message
     return f"[{date}] {sender}: {content}", date
 
 
