@@ -105,14 +105,16 @@ def parse_channel(channel_folder):
                 f"Date range: {date_range}\n\n"
                 f"{full_text}",
         "metadata": {
-            "source":       "discord",
-            "channel_name": channel_name,
-            "server_name":  server_name,
-            "channel_type": channel_type,
-            "date_range":   date_range,
-            "message_count":len(conversation_lines),
-            "priority":     "high" if is_priority else "normal",
-            "phase2":       False,
+            "source":        "discord",
+            "channel_name":  channel_name,
+            "server_name":   server_name,
+            "channel_type":  channel_type,
+            "date":          min(dates) if dates else "unknown",
+            "date_range":    date_range,
+            "message_count": len(conversation_lines),
+            "priority":      "high" if is_priority else "normal",
+            "modality":      "text",
+            "phase2":        False,
         }
     }
 

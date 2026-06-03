@@ -84,6 +84,7 @@ def process_notion_file(filepath):
             "date":      date,
             "file_path": filepath,
             "priority":  "high" if is_priority else "normal",
+            "modality":  "text",
             "phase2":    False,
         }
     }

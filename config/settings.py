@@ -13,10 +13,11 @@ ACCOUNT_PATHS = {
 }
 
 OTHER_PATHS = {
-    "chatgpt":        f"{SSD_BASE}/chatgpt",
+    "chatgpt":        f"{SSD_BASE}/chatgpt_ciai",
     "discord":        f"{SSD_BASE}/discord",
     "instagram":      f"{SSD_BASE}/instagram",
     "messenger":      f"{SSD_BASE}/messenger",
+    "facebook":       f"{SSD_BASE}/facebook",
     "whatsapp":       f"{SSD_BASE}/whatsapp",
     "linkedin":       f"{SSD_BASE}/linkedin",
     "spotify":        f"{SSD_BASE}/spotify",
@@ -35,11 +36,11 @@ SKIP_EXTENSIONS  = [".torrent"]
 
 LARGE_VIDEO_THRESHOLD_MB = 500
 
-EMBEDDING_MODEL = "text-embedding-3-small"
-CHUNK_SIZE      = 1000
-CHUNK_OVERLAP   = 100
+EMBEDDING_MODEL = "BAAI/bge-m3"  # local, multilingual, 8192 token limit, Bangla-native
+CHUNK_SIZE      = 512             # tiktoken cl100k_base tokens; well within bge-m3's 8192 limit
+CHUNK_OVERLAP   = 50              # ~10% overlap between consecutive chunks
 
-LLM_MODEL = "claude-sonnet-4-20250514"
+LLM_MODEL = "llama3.2"  # local Ollama model
 
 # language settings
 PRIMARY_LANGUAGES   = ["en", "bn"]

@@ -2,13 +2,54 @@ import mailbox
 import os
 import io
 import sys
+import json
+import re
 from datetime import datetime
+from html.parser import HTMLParser
 
 sys.path.append(os.path.expanduser("~/personal-kb"))
-from config.settings import ACCOUNT_PATHS, IMAGE_EXTENSIONS, ZIP_EXTENSIONS
+from config.settings import ACCOUNT_PATHS, IMAGE_EXTENSIONS, ZIP_EXTENSIONS, SKIP_EXTENSIONS
+
+try:
+    import fitz
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+
+try:
+    from docx import Document
+    DOCX_SUPPORT = True
+except ImportError:
+    DOCX_SUPPORT = False
+
+try:
+    import openpyxl
+    XLSX_SUPPORT = True
+except ImportError:
+    XLSX_SUPPORT = False
 
 ACCOUNTS = ACCOUNT_PATHS
 MAX_EMAILS_PER_ACCOUNT = None
+
+_MULTI_SPACE = re.compile(r'\s+')
+
+
+def _strip_html(html_text):
+    class _Stripper(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.parts = []
+
+        def handle_data(self, data):
+            self.parts.append(data)
+
+    stripper = _Stripper()
+    try:
+        stripper.feed(html_text)
+    except Exception:
+        pass
+    text = " ".join(stripper.parts)
+    return _MULTI_SPACE.sub(" ", text).strip()
 
 
 # ── ATTACHMENT HANDLER ─────────────────────────────────────
@@ -90,15 +131,25 @@ def extract_email_body(message):
     attachment_texts = ""
     deferred_attachments = []  # images and zips saved for later
 
+    html_fallback = ""
+
     if message.is_multipart():
         for part in message.walk():
             content_type = part.get_content_type()
             disposition  = str(part.get("Content-Disposition") or "")
 
-            # main body text
+            # prefer plain text body
             if content_type == "text/plain" and "attachment" not in disposition:
                 try:
                     body += part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                except:
+                    pass
+
+            # fall back to HTML body if no plain text found
+            elif content_type == "text/html" and "attachment" not in disposition:
+                try:
+                    raw_html = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                    html_fallback += _strip_html(raw_html)
                 except:
                     pass
 
@@ -109,10 +160,19 @@ def extract_email_body(message):
                 if tag:
                     deferred_attachments.append(tag)
     else:
+        content_type = message.get_content_type()
         try:
-            body = message.get_payload(decode=True).decode("utf-8", errors="ignore")
+            raw = message.get_payload(decode=True).decode("utf-8", errors="ignore")
+            if content_type == "text/html":
+                body = _strip_html(raw)
+            else:
+                body = raw
         except:
             pass
+
+    # use html fallback only when no plain text found
+    if not body and html_fallback:
+        body = html_fallback
 
     return body.strip(), attachment_texts.strip(), deferred_attachments
 
@@ -167,16 +227,18 @@ Subject: {subject}
             chunk = {
                 "text": full_text,
                 "metadata": {
-                    "source":          "gmail",
-                    "account":         account_name,
-                    "subject":         subject,
-                    "sender":          sender,
-                    "date":            date,
-                    "has_images":      bool(image_files),
-                    "image_files":     image_files,
-                    "has_zips":        bool(zip_files),
-                    "zip_files":       zip_files,
-                    "priority":        "normal"
+                    "source":      "gmail",
+                    "account":     account_name,
+                    "subject":     subject,
+                    "sender":      sender,
+                    "date":        date,
+                    "has_images":  bool(image_files),
+                    "image_files": json.dumps(image_files),
+                    "has_zips":    bool(zip_files),
+                    "zip_files":   json.dumps(zip_files),
+                    "priority":    "normal",
+                    "modality":    "text",
+                    "phase2":      False,
                 }
             }
 

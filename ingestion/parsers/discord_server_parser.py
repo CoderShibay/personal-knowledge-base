@@ -104,9 +104,11 @@ def parse_server_channel(json_path, server_name):
             "source":        "discord_server",
             "server_name":   server_name,
             "channel_name":  channel_name,
+            "date":          min(dates) if dates else "unknown",
             "date_range":    date_range,
             "message_count": len(conversation_lines),
             "priority":      "high" if is_priority else "normal",
+            "modality":      "text",
             "phase2":        False,
         }
     }

@@ -9,6 +9,10 @@ from config.settings import OTHER_PATHS, PRIORITY_PROJECTS
 CHATGPT_DATA_PATH = os.path.join(OTHER_PATHS["chatgpt"], "conversations.json")
 
 def parse_chatgpt_export(filepath=CHATGPT_DATA_PATH):
+    if not os.path.exists(filepath):
+        print(f"ChatGPT export not found: {filepath}")
+        return []
+
     with open(filepath, "r", encoding="utf-8") as f:
         conversations = json.load(f)
 
@@ -54,11 +58,12 @@ def parse_chatgpt_export(filepath=CHATGPT_DATA_PATH):
         chunk = {
             "text": full_text,
             "metadata": {
-                "source": "chatgpt",
-                "title": title,
-                "date": date,
-                "priority": "high" if is_priority else "normal",
-                "char_count": len(full_text)
+                "source":    "chatgpt",
+                "title":     title,
+                "date":      date,
+                "priority":  "high" if is_priority else "normal",
+                "modality":  "text",
+                "phase2":    False,
             }
         }
 

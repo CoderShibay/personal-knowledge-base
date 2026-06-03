@@ -153,6 +153,7 @@ def process_file(filepath, account_name):
         "file_size":   file_size,
         "file_path":   filepath,
         "priority":    "high" if is_priority else "normal",
+        "modality":    "text",
         "phase2":      False,
     }
 
