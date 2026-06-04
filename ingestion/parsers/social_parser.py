@@ -1,8 +1,10 @@
 import os
+import io
 import json
 import csv
 import re
 import sys
+import zipfile
 from datetime import datetime
 from collections import defaultdict
 
@@ -471,25 +473,431 @@ def parse_instagram(instagram_path=INSTAGRAM_PATH):
     return chunks
 
 
+def _load_json_from_zip(z, path):
+    """Read and parse a JSON file from inside an open ZipFile."""
+    try:
+        with z.open(path) as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"    Could not read {path}: {e}")
+        return None
+
+
+def _parse_fb_message(msg):
+    """
+    Parse one Facebook Messenger message. Returns (line, date).
+    Nothing is dropped — every event is preserved as text or tag.
+    Reactions appended inline when present.
+    """
+    raw_sender  = _fix(msg.get("sender_name") or "")
+    sender      = raw_sender if raw_sender.strip() else None
+    date        = _ts_ms(msg.get("timestamp_ms", 0))
+    raw_content = _fix((msg.get("content") or "").strip())
+    share       = msg.get("share")
+    reactions   = msg.get("reactions") or []
+
+    # No sender = message placeholder for a deleted message
+    if not sender:
+        rxn_str = ""
+        if reactions:
+            rxn_str = " ".join(_fix(r.get("reaction") or "") for r in reactions if r.get("reaction"))
+        tag = f"[deleted message]" + (f"  [{rxn_str}]" if rxn_str else "")
+        return f"[{date}] (deleted): {tag}", date
+
+    if msg.get("is_unsent"):
+        content = "[unsent message]"
+    elif share:
+        content = _format_share(share)
+    elif raw_content:
+        tag = _media_tag(raw_content)
+        content = tag if tag else raw_content
+    elif msg.get("photos"):
+        content = "[photo]"
+    elif msg.get("sticker"):
+        content = "[sticker]"
+    elif msg.get("audio_files"):
+        content = "[voice note]"
+    elif msg.get("videos"):
+        content = "[video]"
+    elif msg.get("gifs"):
+        content = "[gif]"
+    elif msg.get("files"):
+        content = "[file]"
+    elif msg.get("is_geoblocked_for_viewer"):
+        content = "[geoblocked content]"
+    elif sender == "Facebook user":
+        content = "[message from deleted account]"
+    else:
+        content = "[media]"
+
+    if reactions:
+        rxn_str = " ".join(_fix(r.get("reaction") or "") for r in reactions if r.get("reaction"))
+        if rxn_str:
+            content += f"  [{rxn_str}]"
+
+    return f"[{date}] {sender}: {content}", date
+
+
 def parse_messenger(facebook_path=FACEBOOK_PATH):
+    """
+    Parse all Facebook Messenger DMs directly from the 16 outer meta-*.zip files.
+    No extraction to disk required. Reads inbox + message_requests threads.
+    """
     chunks = []
 
     if not os.path.exists(facebook_path):
-        print(f"No Facebook/Messenger data found at {facebook_path}")
+        print(f"No Facebook data found at {facebook_path}")
         return chunks
 
     print(f"Scanning Messenger (Facebook export): {facebook_path}")
 
-    message_dirs = _find_message_dirs(facebook_path)
+    # Collect all message_*.json paths across all outer zips
+    # thread_id -> [(zip_path, json_path, msg_num)]
+    thread_files = defaultdict(list)
+    zip_cache = {}
 
-    if not message_dirs:
-        print(f"  No messages/inbox found — zips may not be extracted yet")
-        return chunks
+    for fname in sorted(os.listdir(facebook_path)):
+        if not (fname.startswith("meta-") and fname.endswith(".zip")):
+            continue
+        fpath = os.path.join(facebook_path, fname)
+        try:
+            z = zipfile.ZipFile(fpath)
+            zip_cache[fpath] = z
+        except Exception as e:
+            print(f"  Could not open {fname}: {e}")
+            continue
 
-    print(f"  Found {len(message_dirs)} message dir(s)")
-    chunks = _parse_message_dirs("messenger", message_dirs)
+        for n in z.namelist():
+            if "/messages/" not in n or not n.endswith(".json"):
+                continue
+            basename = n.split("/")[-1]
+            if not (basename.startswith("message_") and basename.endswith(".json")):
+                continue
+            parts = n.split("/")
+            if len(parts) < 6:
+                continue
+            # parts: [outer-dir, fb-dir, your_facebook_activity, messages, inbox/msg_req, thread_id, message_N.json]
+            folder_cat = parts[-3] if len(parts) >= 7 else ""
+            if folder_cat not in ("inbox", "message_requests", "archived_threads",
+                                  "e2ee_cutover", "filtered_threads"):
+                continue
+            thread_id = parts[-2]
+            try:
+                msg_num = int(basename[8:-5])  # message_N.json → N
+            except ValueError:
+                msg_num = 0
+            thread_files[thread_id].append((fpath, n, msg_num))
+
+    print(f"  Found {len(thread_files)} threads across {len(zip_cache)} zips")
+
+    for thread_id, file_list in thread_files.items():
+        # Sort message files oldest→newest: highest number first (Meta stores newest in _1)
+        file_list.sort(key=lambda x: -x[2])
+
+        lines = []
+        dates = []
+        title = thread_id
+        participant_count = 0
+
+        for zip_path, json_path, _ in file_list:
+            z = zip_cache[zip_path]
+            data = _load_json_from_zip(z, json_path)
+            if not data:
+                continue
+
+            if title == thread_id and data.get("title"):
+                title = _fix(data["title"])
+
+            if not participant_count:
+                participant_count = len(data.get("participants") or [])
+
+            # Messages inside each file are newest-first — reverse for chronological order
+            for msg in reversed(data.get("messages") or []):
+                line, date = _parse_fb_message(msg)
+                if line:
+                    lines.append(line)
+                    dates.append(date)
+
+        if not lines:
+            continue
+
+        chunk = _build_chunk("messenger", title, lines, dates, len(lines))
+        chunk["metadata"]["participant_count"] = participant_count
+        chunks.append(chunk)
+
+        label = " [PRIORITY]" if chunk["metadata"]["priority"] == "high" else ""
+        print(f"  {title} ({len(lines)} messages){label}")
+
+    for z in zip_cache.values():
+        z.close()
 
     print(f"Messenger chunks: {len(chunks)}")
+    return chunks
+
+
+def parse_facebook_reactions(facebook_path=FACEBOOK_PATH):
+    """
+    Parse Facebook post reactions (likes, loves, etc.) from likes_and_reactions_*.json.
+    Groups by month — one chunk per month with reaction type breakdown.
+    """
+    chunks = []
+
+    if not os.path.exists(facebook_path):
+        return chunks
+
+    print(f"Scanning Facebook reactions: {facebook_path}")
+
+    _EMOJI = {
+        "LIKE": "👍", "LOVE": "❤️", "HAHA": "😂", "WOW": "😮",
+        "SORRY": "😢", "ANGER": "😡", "NONE": "·", "DOROTHY": "🌈",
+    }
+
+    by_month = defaultdict(lambda: defaultdict(int))
+    total = 0
+
+    for fname in sorted(os.listdir(facebook_path)):
+        if not (fname.startswith("meta-") and fname.endswith(".zip")):
+            continue
+        fpath = os.path.join(facebook_path, fname)
+        try:
+            z = zipfile.ZipFile(fpath)
+        except Exception:
+            continue
+
+        for n in z.namelist():
+            if "likes_and_reactions_" not in n or not n.endswith(".json"):
+                continue
+            data = _load_json_from_zip(z, n)
+            if not isinstance(data, list):
+                continue
+            for item in data:
+                ts    = item.get("timestamp", 0)
+                if not ts or ts < 1000000:
+                    continue  # skip bad/zero timestamps
+                month = _ts_unix(ts)[:7]
+                for d in item.get("data") or []:
+                    rxn = ((d.get("reaction") or {}).get("reaction") or "LIKE").strip()
+                    if rxn:
+                        by_month[month][rxn] += 1
+                        total += 1
+        z.close()
+
+    for month in sorted(by_month):
+        rxn_counts = by_month[month]
+        month_total = sum(rxn_counts.values())
+        lines = []
+        for rxn, count in sorted(rxn_counts.items(), key=lambda x: -x[1]):
+            emoji = _EMOJI.get(rxn, rxn)
+            lines.append(f"  {emoji} {rxn}: {count}")
+        chunks.append({
+            "text": f"Facebook reactions — {month} ({month_total} total)\n" + "\n".join(lines),
+            "metadata": {
+                "source":         "facebook_reactions",
+                "date":           f"{month}-01",
+                "date_range":     month,
+                "reaction_count": month_total,
+                "priority":       "normal",
+                "modality":       "text",
+                "phase2":         False,
+            },
+        })
+
+    print(f"  Facebook reactions: {total} total, {len(chunks)} monthly chunks")
+    return chunks
+
+
+def parse_facebook_comments(facebook_path=FACEBOOK_PATH):
+    """
+    Parse Facebook comments from two sources:
+      - comments.json: all post comments the user wrote (3,000+)
+      - your_comment_edits.json: edited comment final texts (deduped against above)
+    One chunk with all comments in chronological order.
+    """
+    chunks = []
+
+    if not os.path.exists(facebook_path):
+        return chunks
+
+    print(f"Scanning Facebook comments: {facebook_path}")
+
+    all_comments = []
+    seen_keys = set()
+
+    for fname in sorted(os.listdir(facebook_path)):
+        if not (fname.startswith("meta-") and fname.endswith(".zip")):
+            continue
+        fpath = os.path.join(facebook_path, fname)
+        try:
+            z = zipfile.ZipFile(fpath)
+        except Exception:
+            continue
+
+        for n in z.namelist():
+            if not n.endswith(".json"):
+                continue
+
+            # comments.json — all real post comments
+            if n.endswith("comments_and_reactions/comments.json"):
+                data = _load_json_from_zip(z, n)
+                if not isinstance(data, dict):
+                    continue
+                for item in (data.get("comments_v2") or []):
+                    ts = item.get("timestamp", 0)
+                    if not ts or ts < 1000000:
+                        continue
+                    date = _ts_unix(ts)
+                    for d in (item.get("data") or []):
+                        cmt  = d.get("comment") or {}
+                        text = _fix((cmt.get("comment") or "")).strip()
+                        if text:
+                            key = (date, text[:60])
+                            if key not in seen_keys:
+                                seen_keys.add(key)
+                                all_comments.append((date, text))
+
+            # your_comment_edits.json — edited comment final texts
+            elif n.endswith("comments_and_reactions/your_comment_edits.json"):
+                data = _load_json_from_zip(z, n)
+                if not isinstance(data, list):
+                    continue
+                for item in data:
+                    ts = item.get("timestamp", 0)
+                    if not ts or ts < 1000000:
+                        continue
+                    date = _ts_unix(ts)
+                    lv   = item.get("label_values") or []
+                    text = _fix(next(
+                        (x.get("value", "") for x in lv if x.get("label") == "Text"), ""
+                    )).strip()
+                    if text:
+                        key = (date, text[:60])
+                        if key not in seen_keys:
+                            seen_keys.add(key)
+                            all_comments.append((date, text))
+        z.close()
+
+    if not all_comments:
+        print("  No Facebook comments found")
+        return chunks
+
+    all_comments.sort(key=lambda x: x[0])
+    lines = [f"[{date}] {text}" for date, text in all_comments]
+    dates = [c[0] for c in all_comments]
+
+    chunks.append({
+        "text": f"Facebook comments — {len(all_comments)} total\n\n" + "\n".join(lines),
+        "metadata": {
+            "source":        "facebook_comments",
+            "date":          min(dates),
+            "date_range":    f"{min(dates)} to {max(dates)}",
+            "comment_count": len(all_comments),
+            "priority":      "normal",
+            "modality":      "text",
+            "phase2":        False,
+        },
+    })
+
+    print(f"  Facebook comments: {len(all_comments)}")
+    return chunks
+
+
+def parse_facebook_posts(facebook_path=FACEBOOK_PATH):
+    """
+    Parse Facebook timeline posts and posts on other pages with text content.
+    Posts with no text (photo-only, check-ins with no caption) are skipped.
+    Groups by year — one chunk per year.
+    """
+    chunks = []
+
+    if not os.path.exists(facebook_path):
+        return chunks
+
+    print(f"Scanning Facebook posts: {facebook_path}")
+
+    all_posts = []
+    seen_texts = set()  # deduplicate across zips (same file appears in multiple fb-dirs)
+
+    for fname in sorted(os.listdir(facebook_path)):
+        if not (fname.startswith("meta-") and fname.endswith(".zip")):
+            continue
+        fpath = os.path.join(facebook_path, fname)
+        try:
+            z = zipfile.ZipFile(fpath)
+        except Exception:
+            continue
+
+        for n in z.namelist():
+            if not n.endswith(".json"):
+                continue
+            basename = n.split("/")[-1]
+
+            # Timeline posts and posts on other pages
+            if "your_posts__check_ins" in basename or "posts_on_other_pages" in basename:
+                data = _load_json_from_zip(z, n)
+                if not isinstance(data, list):
+                    continue
+                for item in data:
+                    ts  = item.get("timestamp", 0)
+                    if not ts or ts < 1000000:
+                        continue
+                    date = _ts_unix(ts)
+                    lv   = item.get("label_values") or []
+                    msg  = _fix(next(
+                        (x.get("value", "") for x in lv if x.get("label") == "Message"), ""
+                    )).strip()
+                    if msg:
+                        key = (date, msg[:80])
+                        if key not in seen_texts:
+                            seen_texts.add(key)
+                            all_posts.append((date, msg))
+
+            # Group posts with text
+            elif basename == "group_posts_and_comments.json":
+                data = _load_json_from_zip(z, n)
+                if not isinstance(data, dict):
+                    continue
+                for item in (data.get("group_posts_v2") or []):
+                    ts  = item.get("timestamp", 0)
+                    if not ts or ts < 1000000:
+                        continue
+                    date = _ts_unix(ts)
+                    for d in (item.get("data") or []):
+                        text = _fix((d.get("post") or "")).strip()
+                        if text:
+                            key = (date, text[:80])
+                            if key not in seen_texts:
+                                seen_texts.add(key)
+                                all_posts.append((date, text))
+        z.close()
+
+    if not all_posts:
+        print("  No Facebook posts with text found")
+        return chunks
+
+    all_posts.sort(key=lambda x: x[0])
+
+    by_year = defaultdict(list)
+    for date, text in all_posts:
+        by_year[date[:4]].append((date, text))
+
+    for year in sorted(by_year):
+        year_posts = by_year[year]
+        lines      = [f"[{date}] {text}" for date, text in year_posts]
+        dates      = [p[0] for p in year_posts]
+        chunks.append({
+            "text": f"Facebook posts — {year} ({len(year_posts)} posts)\n\n" + "\n".join(lines),
+            "metadata": {
+                "source":     "facebook_posts",
+                "date":       min(dates),
+                "date_range": f"{min(dates)} to {max(dates)}",
+                "post_count": len(year_posts),
+                "priority":   "normal",
+                "modality":   "text",
+                "phase2":     False,
+            },
+        })
+
+    print(f"  Facebook posts: {len(all_posts)} with text, {len(chunks)} yearly chunks")
     return chunks
 
 
@@ -550,6 +958,9 @@ def parse_all_social():
     chunks = []
     chunks.extend(parse_instagram())
     chunks.extend(parse_messenger())
+    chunks.extend(parse_facebook_reactions())
+    chunks.extend(parse_facebook_comments())
+    chunks.extend(parse_facebook_posts())
     chunks.extend(parse_linkedin())
     print(f"\nDone! Total social chunks: {len(chunks)}")
     return chunks
@@ -558,7 +969,19 @@ def parse_all_social():
 # ── RUN ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    chunks = parse_instagram()
+    import sys
+    target = sys.argv[1] if len(sys.argv) > 1 else "instagram"
+
+    if target == "facebook":
+        chunks = []
+        chunks.extend(parse_messenger())
+        chunks.extend(parse_facebook_reactions())
+        chunks.extend(parse_facebook_comments())
+        chunks.extend(parse_facebook_posts())
+    elif target == "all":
+        chunks = parse_all_social()
+    else:
+        chunks = parse_instagram()
 
     print(f"\nTotal chunks: {len(chunks)}")
 
@@ -570,20 +993,22 @@ if __name__ == "__main__":
         print(f"  {s}: {n}")
 
     if chunks:
-        # Find first DM chunk for preview
-        dm = next((c for c in chunks if c["metadata"]["source"] == "instagram"), None)
+        dm = next((c for c in chunks if c["metadata"]["source"] == "messenger"), None)
         if dm:
-            print(f"\n── DM PREVIEW ──")
+            print(f"\n── MESSENGER DM PREVIEW ──")
             print(dm["text"][:400])
 
-        # Find a likes chunk
-        like = next((c for c in chunks if c["metadata"]["source"] == "instagram_likes"), None)
-        if like:
-            print(f"\n── LIKES PREVIEW ──")
-            print(like["text"][:400])
+        rxn = next((c for c in chunks if c["metadata"]["source"] == "facebook_reactions"), None)
+        if rxn:
+            print(f"\n── REACTIONS PREVIEW ──")
+            print(rxn["text"][:300])
 
-        # Find a saves chunk
-        save = next((c for c in chunks if c["metadata"]["source"] == "instagram_saves"), None)
-        if save:
-            print(f"\n── SAVES PREVIEW ──")
-            print(save["text"][:400])
+        post = next((c for c in chunks if c["metadata"]["source"] == "facebook_posts"), None)
+        if post:
+            print(f"\n── POSTS PREVIEW ──")
+            print(post["text"][:300])
+
+        ig = next((c for c in chunks if c["metadata"]["source"] == "instagram"), None)
+        if ig:
+            print(f"\n── INSTAGRAM DM PREVIEW ──")
+            print(ig["text"][:400])
