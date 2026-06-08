@@ -21,6 +21,7 @@ OTHER_PATHS = {
     "whatsapp":       f"{SSD_BASE}/whatsapp",
     "linkedin":       f"{SSD_BASE}/linkedin",
     "spotify":        f"{SSD_BASE}/spotify",
+    "letterboxd":     f"{SSD_BASE}/letterboxd-sma_purno-2025-08-30-10-56-utc",
     "notion":         f"{SSD_BASE}/notion",
     "android":        f"{SSD_BASE}/android",
     "windows_laptop": f"{SSD_BASE}/windows_laptop",

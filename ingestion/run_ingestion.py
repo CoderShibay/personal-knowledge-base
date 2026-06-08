@@ -14,12 +14,16 @@ from vectorstore.chroma_store import upsert_chunks, count
 from ingestion.parsers.gmail_parser import parse_all_gmail_accounts
 from ingestion.parsers.chatgpt_parser import parse_chatgpt_export
 from ingestion.parsers.drive_parser import parse_all_drive_accounts
-from ingestion.parsers.discord_parser import parse_discord_export
+from ingestion.parsers.discord_personal_parser import parse_discord_personal
 from ingestion.parsers.discord_server_parser import parse_all_servers
 from ingestion.parsers.notion_parser import parse_notion_export
-from ingestion.parsers.social_parser import parse_all_social
+from ingestion.parsers.instagram_parser import parse_instagram
+from ingestion.parsers.facebook_parser import parse_facebook
+from ingestion.parsers.linkedin_parser import parse_linkedin
 from ingestion.parsers.whatsapp_parser import parse_whatsapp_export
-from ingestion.parsers.spotify_parser import parse_spotify_export
+from ingestion.parsers.spotify_streaming_parser import parse_spotify_streaming
+from ingestion.parsers.spotify_personal_parser import parse_spotify_personal
+from ingestion.parsers.letterboxd_parser import parse_letterboxd
 from ingestion.parsers.maps_parser import parse_maps_export
 from ingestion.parsers.youtube_parser import parse_youtube_export
 from ingestion.parsers.calendar_parser import parse_calendar_export
@@ -31,21 +35,25 @@ from ingestion.parsers.gemini_parser import parse_gemini_export
 # ── PARSER REGISTRY ───────────────────────────────────────
 
 PARSERS = [
-    ("gmail",          parse_all_gmail_accounts),
-    ("chatgpt",        parse_chatgpt_export),
-    ("drive",          parse_all_drive_accounts),
-    ("discord",        parse_discord_export),
-    ("discord_server", parse_all_servers),
-    ("notion",         parse_notion_export),
-    ("social",         parse_all_social),
-    ("whatsapp",       parse_whatsapp_export),
-    ("spotify",        parse_spotify_export),
-    ("maps",           parse_maps_export),
-    ("youtube",        parse_youtube_export),
-    ("calendar",       parse_calendar_export),
-    ("chrome",         parse_chrome_export),
-    ("keep",           parse_keep_export),
-    ("gemini",         parse_gemini_export),
+    ("gmail",             parse_all_gmail_accounts),
+    ("chatgpt",           parse_chatgpt_export),
+    ("drive",             parse_all_drive_accounts),
+    ("discord_personal",  parse_discord_personal),
+    ("discord_server",    parse_all_servers),
+    ("instagram",         parse_instagram),
+    ("facebook",          parse_facebook),
+    ("linkedin",          parse_linkedin),
+    ("whatsapp",          parse_whatsapp_export),
+    ("spotify_streaming", parse_spotify_streaming),
+    ("spotify_personal",  parse_spotify_personal),
+    ("letterboxd",        parse_letterboxd),
+    ("maps",              parse_maps_export),
+    ("youtube",           parse_youtube_export),
+    ("calendar",          parse_calendar_export),
+    ("chrome",            parse_chrome_export),
+    ("keep",              parse_keep_export),
+    ("gemini",            parse_gemini_export),
+    ("notion",            parse_notion_export),
 ]
 
 

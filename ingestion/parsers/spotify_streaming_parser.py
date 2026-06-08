@@ -5,17 +5,11 @@ import json
 sys.path.append(os.path.expanduser("~/personal-kb"))
 from config.settings import OTHER_PATHS
 
-# ── CONFIGURATION ──────────────────────────────────────────
-
-SPOTIFY_PATH = OTHER_PATHS["spotify"]
-
-# Extended Streaming History filenames
+SPOTIFY_PATH    = OTHER_PATHS["spotify"]
 _HISTORY_PREFIX = "Streaming_History_"
 
 
-# ── HELPERS ────────────────────────────────────────────────
-
-def ms_to_mmss(ms):
+def _ms_to_mmss(ms):
     total_seconds = int(ms // 1000)
     minutes = total_seconds // 60
     seconds = total_seconds % 60
@@ -30,7 +24,6 @@ def _parse_entry(row):
     ms_played = row.get("ms_played", 0)
     skipped   = bool(row.get("skipped", False))
 
-    # Drop podcasts, audiobooks, and entries with no track metadata
     if not ts or not artist or not track:
         return None
 
@@ -39,17 +32,16 @@ def _parse_entry(row):
     except Exception:
         return None
 
-    # Drop plays under 30 seconds — these are accidental taps or buffering
     if ms_played < 30000:
         return None
 
     return {
-        "date":     ts[:10],
-        "artist":   artist,
-        "track":    track,
-        "album":    album,
-        "ms":       ms_played,
-        "skipped":  skipped,
+        "date":    ts[:10],
+        "artist":  artist,
+        "track":   track,
+        "album":   album,
+        "ms":      ms_played,
+        "skipped": skipped,
     }
 
 
@@ -64,25 +56,24 @@ def _read_json(filepath):
 
 
 def _format_line(entry):
-    """Format one track as a single line for the chunk text."""
-    time_str = ms_to_mmss(entry["ms"])
+    time_str   = _ms_to_mmss(entry["ms"])
     album_part = f" / {entry['album']}" if entry["album"] else ""
-    skip_tag = " [skip]" if entry["skipped"] else ""
+    skip_tag   = " [skip]" if entry["skipped"] else ""
     return f"{entry['artist']} - {entry['track']}{album_part} ({time_str}){skip_tag}"
 
 
 # ── MAIN PARSER ────────────────────────────────────────────
 
-def parse_spotify_export(spotify_path=SPOTIFY_PATH):
+def parse_spotify_streaming(spotify_path=SPOTIFY_PATH):
     chunks = []
 
     if not os.path.exists(spotify_path):
         print(f"No Spotify export found at {spotify_path}")
         return chunks
 
-    print(f"Scanning Spotify export: {spotify_path}")
+    print(f"Scanning Spotify streaming history: {spotify_path}")
 
-    daily = {}
+    daily        = {}
     files_parsed = 0
 
     for root, dirs, files in os.walk(spotify_path):
@@ -91,8 +82,8 @@ def parse_spotify_export(spotify_path=SPOTIFY_PATH):
                 continue
 
             filepath = os.path.join(root, filename)
-            rows = _read_json(filepath)
-            kept = 0
+            rows     = _read_json(filepath)
+            kept     = 0
 
             for row in rows:
                 entry = _parse_entry(row)
@@ -123,7 +114,7 @@ def parse_spotify_export(spotify_path=SPOTIFY_PATH):
         chunks.append({
             "text": header + "\n\n" + "\n".join(lines),
             "metadata": {
-                "source":        "spotify",
+                "source":        "spotify_streaming",
                 "date":          date,
                 "track_count":   len(day_entries),
                 "total_minutes": total_min,
@@ -144,18 +135,13 @@ def parse_spotify_export(spotify_path=SPOTIFY_PATH):
 # ── RUN ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    chunks = parse_spotify_export()
-
+    chunks = parse_spotify_streaming()
     total_tracks = sum(c["metadata"]["track_count"] for c in chunks)
     total_skips  = sum(c["metadata"]["skip_count"]  for c in chunks)
     print(f"\nTotal days:    {len(chunks)}")
     print(f"Total tracks:  {total_tracks}")
     print(f"Total skipped: {total_skips}")
-
     if chunks:
-        print(f"\n── FIRST CHUNK PREVIEW ──")
-        print(chunks[0]["text"][:400])
-        print()
-        print(f"── LARGEST DAY ──")
+        print(f"\n── FIRST CHUNK PREVIEW ──\n{chunks[0]['text'][:400]}")
         biggest = max(chunks, key=lambda c: c["metadata"]["track_count"])
-        print(biggest["text"][:400])
+        print(f"\n── LARGEST DAY ──\n{biggest['text'][:400]}")
