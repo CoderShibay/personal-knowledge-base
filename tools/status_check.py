@@ -5,7 +5,7 @@ Run this at the start of any session to see exactly what data is on the SSD,
 what needs downloading, what needs extraction, and what is ready to ingest.
 
 Usage:
-    cd ~/personal-kb && source venv/bin/activate
+    cd <this repo> && source venv/bin/activate
     python3 tools/status_check.py
     python3 tools/status_check.py --zips    # also validate all zip files (slower)
 """
@@ -18,7 +18,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 
-sys.path.append(os.path.expanduser("~/personal-kb"))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import SSD_BASE, ACCOUNT_PATHS, OTHER_PATHS
 
 try:

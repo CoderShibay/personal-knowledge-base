@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from collections import defaultdict
 
-sys.path.append(os.path.expanduser("~/personal-kb"))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from config.settings import OTHER_PATHS
 
 LETTERBOXD_PATH = OTHER_PATHS["letterboxd"]

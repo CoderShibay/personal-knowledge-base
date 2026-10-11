@@ -4,7 +4,7 @@ import argparse
 import traceback
 from datetime import datetime
 
-sys.path.append(os.path.expanduser("~/personal-kb"))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ingestion.chunker import chunk_many
 from ingestion.error_logger import log_error

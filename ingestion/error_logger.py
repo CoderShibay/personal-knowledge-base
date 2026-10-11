@@ -2,7 +2,7 @@ import os
 import sys
 from datetime import datetime
 
-sys.path.append(os.path.expanduser("~/personal-kb"))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import SSD_BASE
 
 LOG_PATH = os.path.join(SSD_BASE, "ingestion_errors.log")

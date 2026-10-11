@@ -3,7 +3,7 @@ import os
 import re
 import tiktoken
 
-sys.path.append(os.path.expanduser("~/personal-kb"))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import CHUNK_SIZE, CHUNK_OVERLAP
 
 ENCODING = tiktoken.get_encoding("cl100k_base")

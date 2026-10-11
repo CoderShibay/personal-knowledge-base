@@ -4,7 +4,7 @@ import json
 import zipfile
 from datetime import datetime
 
-sys.path.append(os.path.expanduser("~/personal-kb"))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from config.settings import OTHER_PATHS
 
 SPOTIFY_PATH         = OTHER_PATHS["spotify"]
